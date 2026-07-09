@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiệm Trà Sữa Kết Nối Backend</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+    <div class="container mt-5">
+        <h1 class="text-center text-primary mb-5">🧋 Tiệm Trà Sữa Online 🧋</h1>
+        
+        <div class="row">
+            <div class="col-md-8">
+                <h3 class="mb-4">Thực đơn hôm nay</h3>
+                <div id="menu-container" class="row g-3">
+                    <p>Đang tải thực đơn từ Backend...</p>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card shadow-sm border-primary">
+                    <div class="card-body">
+                        <h4 class="card-title mb-3">🛒 Giỏ hàng</h4>
+                        <ul id="cart-items" class="list-group mb-3">
+                            <li class="list-group-item text-muted text-center">Giỏ hàng đang trống</li>
+                        </ul>
+                        <div class="mb-3">
+                            <label for="customer-name" class="form-label fw-bold">Tên người nhận:</label>
+                            <input type="text" id="customer-name" class="form-control" placeholder="Nhập tên của bạn">
+                        </div>
+                        <button onclick="submitOrder()" class="btn btn-primary w-100 fw-bold">Xác nhận đặt hàng</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 1. Địa chỉ Backend của bạn
+        const API_URL = "http://127.0.0.1:8000";
+        let cart = []; // Biến lưu trữ giỏ hàng tạm thời
+
+        // 2. Hàm gọi API GET /menu
+        async function loadMenu() {
+            try {
+                // Gọi sang Backend
+                const response = await fetch(`${API_URL}/menu`);
+                const menuItems = await response.json(); // Chuyển kết quả thành mảng
+                
+                const container = document.getElementById("menu-container");
+                container.innerHTML = ""; // Xóa chữ "Đang tải..."
+
+                // Vòng lặp in từng món ăn ra HTML
+                menuItems.forEach(item => {
+                    container.innerHTML += `
+                        <div class="col-md-6">
+                            <div class="card shadow-sm">
+                                <div class="card-body">
+                                    <h5 class="card-title">${item.name}</h5>
+                                    <p class="card-text text-danger fw-bold">${item.price} VNĐ</p>
+                                    <button onclick="addToCart(${item.id}, '${item.name}', ${item.price})" class="btn btn-outline-primary btn-sm">Thêm vào giỏ</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            } catch (error) {
+                console.error("Lỗi:", error);
+                document.getElementById("menu-container").innerHTML = "<p class='text-danger'>Không thể kết nối đến Backend. Hãy chắc chắn uvicorn đang chạy!</p>";
+            }
+        }
+
+        // 3. Hàm xử lý khi bấm nút "Thêm vào giỏ"
+        function addToCart(id, name, price) {
+            // Kiểm tra xem món này có trong giỏ chưa, có rồi thì tăng số lượng
+            let existingItem = cart.find(item => item.item_id === id);
+            if (existingItem) {
+                existingItem.quantity += 1;
+            } else {
+                cart.push({ item_id: id, name: name, price: price, quantity: 1 });
+            }
+            renderCart(); // Cập nhật lại giao diện giỏ hàng
+        }
+
+        // 4. Hàm in giỏ hàng ra màn hình
+        function renderCart() {
+            const cartList = document.getElementById("cart-items");
+            cartList.innerHTML = "";
+            
+            if (cart.length === 0) {
+                cartList.innerHTML = `<li class="list-group-item text-muted text-center">Giỏ hàng đang trống</li>`;
+                return;
+            }
+
+            cart.forEach(item => {
+                cartList.innerHTML += `
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        ${item.name} (x${item.quantity})
+                        <span class="badge bg-primary rounded-pill">${item.price * item.quantity}</span>
+                    </li>
+                `;
+            });
+        }
+
+        // 5. Hàm gọi API POST /orders để thanh toán
+        async function submitOrder() {
+            const customerName = document.getElementById("customer-name").value;
+            
+            if (!customerName) {
+                alert("Vui lòng nhập tên người nhận!");
+                return;
+            }
+            if (cart.length === 0) {
+                alert("Giỏ hàng đang trống!");
+                return;
+            }
+
+            // Định dạng dữ liệu chuẩn giống hệt OrderCreateRequest trong models.py
+            const orderData = {
+                customer_name: customerName,
+                items: cart.map(item => ({ item_id: item.item_id, quantity: item.quantity }))
+            };
+
+            try {
+                const response = await fetch(`${API_URL}/orders`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(orderData)
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    alert(`Đặt hàng thành công! Mã đơn của bạn là: ${result.order_id}. Tổng tiền: ${result.total_price} VNĐ`);
+                    // Xóa giỏ hàng và tên sau khi đặt xong
+                    cart = [];
+                    renderCart();
+                    document.getElementById("customer-name").value = "";
+                } else {
+                    alert("Có lỗi xảy ra khi đặt hàng.");
+                }
+            } catch (error) {
+                console.error("Lỗi:", error);
+                alert("Không thể kết nối đến Backend!");
+            }
+        }
+
+        // Tự động chạy hàm loadMenu() ngay khi mở trang web
+        loadMenu();
+    </script>
+</body>
+</html>
